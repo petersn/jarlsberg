@@ -1,5 +1,10 @@
 
-CFLAGS= -O2 -ffast-math -lm -lglut `sdl-config --cflags --libs`
+CFLAGS= -O2 -ffast-math
+CFLAGS+= -Wall -lm -lglut `sdl-config --cflags --libs`
+
+  # Special Jarlsberg Options
+#CFLAGS+= -DDEBUG_MODE
+CFLAGS+= -DCOLORFUL_MODE
 
 all: jarlsberg
 

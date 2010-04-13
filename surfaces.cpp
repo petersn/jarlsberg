@@ -130,11 +130,71 @@ ostream& operator << (ostream& o, matrix<Numeric> m) {
 }
 
   // Surface functions
-ostream& operator << (ostream& o, surface s) {
+ostream& operator << (ostream& o, surface& s) {
     o << s.localize_basis << s.globalize_basis;
     o << "Position: " << s.position << endl;
     o << "Local position: " << s.local_position << endl;
     o << "Width: " << s.width << " Height: " << s.height << endl;
+}
+
+template <typename Numeric>
+ostream& dump_to_file( ostream& o, vector<Numeric>& s ) {
+    o << s.x << "," << s.y << "," << s.z << ".";
+    return o;
+}
+
+ostream& dump_to_file( ostream& o, int x ) {
+    o << x << ";";
+}
+
+ostream& dump_to_file( ostream& o, surface& s ) {
+      // Store only minimal information, and reconstruct the rest
+    dump_to_file( o, s.localize_basis.row0 );
+    dump_to_file( o, s.localize_basis.row1 );
+    dump_to_file( o, s.position );
+    dump_to_file( o, s.width );
+    dump_to_file( o, s.height );
+    o << endl;
+    return o;
+}
+
+ostream& dump_to_file( ostream& o, list<surface>& l ) {
+    list<surface>::iterator iter_surf;
+    for (iter_surf=l.begin(); iter_surf != l.end(); ++iter_surf) {
+        dump_to_file( o, *iter_surf );
+    }
+    return o;
+}
+
+list<surface> load_from_file( ifstream& input ) {
+    list<surface> surfaces;
+    surface scratch;
+    int total = 0;
+
+    while (! input.eof() ) {
+        input >> scratch.localize_basis.row0.x; input.ignore(1);
+        input >> scratch.localize_basis.row0.y; input.ignore(1);
+        input >> scratch.localize_basis.row0.z; input.ignore(1);
+        input >> scratch.localize_basis.row1.x; input.ignore(1);
+        input >> scratch.localize_basis.row1.y; input.ignore(1);
+        input >> scratch.localize_basis.row1.z; input.ignore(1);
+        scratch.localize_basis.row2 = scratch.localize_basis.row0 ^ scratch.localize_basis.row1;
+        scratch.globalize_basis = scratch.localize_basis;
+        ~scratch.globalize_basis;
+        input >> scratch.position.x; input.ignore(1);
+        input >> scratch.position.y; input.ignore(1);
+        input >> scratch.position.z; input.ignore(1);
+        scratch.local_position = scratch.localize_basis * scratch.position;
+        input >> scratch.width; input.ignore(1);
+        input >> scratch.height; input.ignore(1);
+        input.ignore(1);
+        surfaces.push_back( scratch );
+        total++;
+    }
+
+    cout << "Read " << total << " surfaces." << endl;
+
+    return surfaces;
 }
 
 void render_surface( surface& s ) {
@@ -146,18 +206,27 @@ void render_surface( surface& s ) {
     glVertex3f(temp.x, temp.y, temp.z);	// Bottom Left Of The Texture and Quad
 
     temp = temp + vector_recast<int, double>(s.localize_basis.row0) * s.width;
-    //glTexCoord2f(s.width, 0.0);
+#ifdef DEBUG_MODE
     glTexCoord2f(1.0, 0.0);
+#else
+    glTexCoord2f(s.width, 0.0);
+#endif
     glVertex3f(temp.x, temp.y, temp.z);	// Bottom Left Of The Texture and Quad
 
     temp = temp + vector_recast<int, double>(s.localize_basis.row1) * s.height;
-    //glTexCoord2f(s.width, s.height);
+#ifdef DEBUG_MODE
     glTexCoord2f(1.0, 1.0);
+#else
+    glTexCoord2f(s.width, s.height);
+#endif
     glVertex3f(temp.x, temp.y, temp.z);	// Bottom Left Of The Texture and Quad
 
     temp = temp - vector_recast<int, double>(s.localize_basis.row0) * s.width;
-    //glTexCoord2f(0.0, s.height);
+#ifdef DEBUG_MODE
     glTexCoord2f(0.0, 1.0);
+#else
+    glTexCoord2f(0.0, s.height);
+#endif
     glVertex3f(temp.x, temp.y, temp.z);	// Bottom Left Of The Texture and Quad
 
     glEnd();

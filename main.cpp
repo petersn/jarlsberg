@@ -1,6 +1,7 @@
  // Main Jarlsberg code
 using namespace std;
 #include <iostream>
+#include <fstream>
 #include <list>
 
 #include <SDL/SDL.h>
@@ -48,13 +49,13 @@ vector<int> selection_start, selection_end;
 
   // Config
 /* white ambient light at half intensity (rgba) */
-GLfloat LightAmbient[]  = { 0.5f, 0.5f, 0.5f, 1.0f };
+GLfloat LightAmbient[]  = { 0.1f, 0.1f, 0.1f, 1.0f };
 
 /* super bright, full intensity diffuse light. */
-GLfloat LightDiffuse[]  = { 1.0f, 1.0f, 1.0f, 1.0f };
+GLfloat LightDiffuse[]  = { 0.7f, 0.7f, 0.7f, 1.0f };
 
 /* position of light (x, y, z, (position of light)) */
-GLfloat LightPosition[] = { 0.0f, 0.0f, 2.0f, 1.0f };
+GLfloat LightPosition[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
   // Global variables
 struct camera_t {
@@ -87,19 +88,28 @@ void DrawScreen() {
       // Reset the view
     glLoadIdentity();
 
+      // Set light position
+    glLightfv(GL_LIGHT0, GL_POSITION, LightPosition);
+
       // Reposition the camera based on its position
     glRotatef( camera.tilt,   1.0f, 0.0f, 0.0f);
     glRotatef( camera.facing, 0.0f, 1.0f, 0.0f);
     glTranslatef( -camera.x, -camera.y, -camera.z );
 
+#ifndef COLORFUL_MODE
+    glColor3f(1.0f, 1.0f, 1.0f);
+#endif
+
     int ii = 0;
     for (iter_surf=geometry.begin(); iter_surf != geometry.end(); ++iter_surf) {
+#ifdef COLORFUL_MODE
         if (ii%3 == 0)
             glColor3f(1.0f, 0.0f, 0.0f);
         if (ii%3 == 1)
             glColor3f(0.0f, 1.0f, 0.0f);
         if (ii%3 == 2)
             glColor3f(0.0f, 0.0f, 1.0f);
+#endif
         render_surface( *iter_surf );
         ii++;
     }
@@ -117,6 +127,14 @@ void DrawScreen() {
         glTranslatef(hit_point.x, hit_point.y, hit_point.z);
         glColor3f(0.5f,0.5f,0.5f);
         glutSolidSphere(0.1,10,10);
+
+        //glPushMatrix();
+        //glLoadIdentity();
+        //LightPosition[0] = hit_point.x;
+        //LightPosition[1] = hit_point.y;
+        //LightPosition[2] = hit_point.z;
+        //glPopMatrix();
+
         glTranslatef(-hit_point.x, -hit_point.y, -hit_point.z);
     }
 
@@ -251,12 +269,27 @@ void InitGL() {
     glMatrixMode(GL_MODELVIEW);
 
       // Set up light 1
-    glLightfv(GL_LIGHT1, GL_AMBIENT,  LightAmbient);  // Add lighting -- Ambient
-    glLightfv(GL_LIGHT1, GL_DIFFUSE,  LightDiffuse);  // Add lighting -- Diffuse
-    glLightfv(GL_LIGHT1, GL_POSITION, LightPosition); // Set light position
-    glEnable(GL_LIGHT1);                              // Turn light 1 on
-}
+    glEnable(GL_LIGHTING);
 
+    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
+
+GLfloat lmodel_ambient[] = { 0.2, 0.2, 0.2, 1.0 };
+glLightModelfv(GL_LIGHT_MODEL_AMBIENT, lmodel_ambient);
+
+    glColorMaterial ( GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE ) ;
+    glEnable ( GL_COLOR_MATERIAL ) ;
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT,  LightAmbient);  // Add lighting -- Ambient
+    glLightfv(GL_LIGHT0, GL_DIFFUSE,  LightDiffuse);  // Add lighting -- Diffuse
+    glLightfv(GL_LIGHT0, GL_POSITION, LightPosition); // Set light position
+    glEnable(GL_LIGHT0);                              // Turn light 1 on
+
+//    glMaterialfv(GL_FRONT, GL_AMBIENT,   ambient);
+//    glMaterialfv(GL_FRONT, GL_DIFFUSE,   diffuse);
+//    glMaterialfv(GL_FRONT, GL_SPECULAR,  specular);
+//    glMaterialfv(GL_FRONT, GL_EMISSION,  emission);
+//    glMaterialf (GL_FRONT, GL_SHININESS, shininess);
+}
 
 int main(int argc, char **argv) {
 
@@ -269,6 +302,13 @@ int main(int argc, char **argv) {
     int videoFlags;
 
     geometry.push_back( surface(vector<int>(20,-5,-20), 40, 40, vector<int>(-1,0,0), vector<int>(0,0,1)) );
+    geometry.push_back( surface(vector<int>(20,-5,-20), 20, 40, vector<int>(0,1,0), vector<int>(-1,0,0)) );
+    geometry.push_back( surface(vector<int>(20,-5,-20), 40, 20, vector<int>(0,0,1), vector<int>(0,1,0)) );
+    geometry.push_back( surface(vector<int>(-20,-5,20), 20, 40, vector<int>(0,1,0), vector<int>(1,0,0)) );
+    geometry.push_back( surface(vector<int>(-20,-5,20), 40, 20, vector<int>(0,0,-1), vector<int>(0,1,0)) );
+
+    //geometry.push_back( surface(vector<int>(20,-5,-20), 40, 40, vector<int>(-1,0,0), vector<int>(0,0,1)) );
+    geometry.push_back( surface(vector<int>(20,15,-20), 40, 40, vector<int>(0,0,1), vector<int>(-1,0,0)) );
 
       // Init glut just for spheres
       // I hope to remove this later
@@ -347,6 +387,19 @@ int main(int argc, char **argv) {
                         keys_held[event.key.keysym.sym] = 1;
                     else
                         cerr << "keysym out of range: " << event.key.keysym.sym << endl;
+
+                    if (event.key.keysym.sym == SDLK_SPACE) {
+                        ofstream myfile;
+                        myfile.open("map.jb_geo");
+                        dump_to_file( myfile, geometry );
+                        myfile.close();
+                    }
+                    else if (event.key.keysym.sym == SDLK_BACKSPACE) {
+                        ifstream myfile;
+                        myfile.open("map.jb_geo", ios::in|ios::binary);
+                        geometry = load_from_file( myfile );
+                        myfile.close();
+                    }
 
                     break;
                case SDL_KEYUP:
@@ -469,8 +522,8 @@ int main(int argc, char **argv) {
         camera.tilt   = (camera.tilt   * (1.0 - CAMERA_SMOOTHING_FACTOR)) + (camera.tilt_target   * CAMERA_SMOOTHING_FACTOR);
 
           // Compute the required trig for moving the player
-        cos_angle = (CONST_movespeed*0.5) * cos( camera.facing * (M_PI / 180.0) );
-        sin_angle = (CONST_movespeed*0.5) * sin( camera.facing * (M_PI / 180.0) );
+        cos_angle = CONST_movespeed * cos( camera.facing * (M_PI / 180.0) );
+        sin_angle = CONST_movespeed * sin( camera.facing * (M_PI / 180.0) );
 
           // Update game state
         if (keys_held[SDLK_UP]) {
