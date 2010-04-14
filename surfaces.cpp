@@ -92,10 +92,10 @@ bool vector<Numeric>::operator != (vector<Numeric> b) {
 
   // Matrix functions
 template <typename NumericA, typename NumericB>
-matrix<NumericB> matrix_recast(const matrix<NumericA>* m) {
-    return matrix<NumericB>(vector_recast<NumericA, NumericB>(m->row0),
-                            vector_recast<NumericA, NumericB>(m->row1),
-                            vector_recast<NumericA, NumericB>(m->row2));
+matrix<NumericB> matrix_recast(const matrix<NumericA>& m) {
+    return matrix<NumericB>(vector_recast<NumericA, NumericB>(m.row0),
+                            vector_recast<NumericA, NumericB>(m.row1),
+                            vector_recast<NumericA, NumericB>(m.row2));
 }
 
   // Project
@@ -320,7 +320,7 @@ vector<double> ray_cast( const surface& s, vector<double> origin, vector<double>
 
     hitpoint = origin + delta;
 
-    matrix<double> cast_result = matrix_recast<int, double>( &(s.localize_basis) );
+    matrix<double> cast_result = matrix_recast<int, double>( s.localize_basis );
 
     localhitpoint = cast_result * hitpoint;
 
@@ -710,5 +710,60 @@ list<surface> optimize( list<surface> source ) {
     }
 
     return dest;
+}
+
+vector<double> limit( list<surface> source, vector<double>p, double width, double base, double head, bool* floored=NULL ) {
+    list<surface>::iterator iter_surf;
+
+      // Initially, you haven't touched the ground yet
+    if (floored != NULL)
+        *floored = false;
+
+    for (iter_surf=source.begin(); iter_surf != source.end(); ++iter_surf) {
+        surface& s = *iter_surf;
+        matrix<double>localize_basis = matrix_recast<int, double>( s.localize_basis );
+        vector<double>loc_p = localize_basis * p;
+        loc_p.z -= s.local_position.z;
+          // Test if the surface contains the locally projected point
+        if (loc_p.x > s.local_position.x && loc_p.x < s.local_position.x+s.width &&
+            loc_p.y > s.local_position.y && loc_p.y < s.local_position.y+s.height) {
+            double offset;
+            if (s.localize_basis.row2.x != 0 || s.localize_basis.row2.z != 0)
+                offset = width;
+            else if (s.localize_basis.row2.y > 0)
+                offset = base;
+            else if (s.localize_basis.row2.y < 0)
+                offset = head;
+            if (loc_p.z > 0 && loc_p.z < offset) {
+                matrix<double>globalize_basis = matrix_recast<int, double>( s.globalize_basis );
+                p = globalize_basis * vector<double>(loc_p.x, loc_p.y, s.local_position.z+offset);
+
+                  // If you're standing on the ground, tell the caller, if they asked
+                if (s.localize_basis.row2.y > 0 && floored != NULL) {
+                    *floored = true;
+                }
+            }
+        }
+    }
+
+    return p;
+
+/*
+        def choose_function( x ):
+            if x[0] != 0 or x[1] != 0:
+                return width
+            if x[2] > 0:
+                return base
+            if x[2] < 0:
+                return head
+        x, y, z = x, z, y#-(offset-climb)
+        for surface in self.surfaces:
+            lx, ly, depth = surface.project( (x, y, z) )
+            if surface.contains_point( (lx, ly) ):
+                offset = choose_function( surface.normal )
+                if depth > 0 and depth < offset: #offset-climb and depth < offset:
+                    x, y, z = surface.absolute( (lx, ly), offset )
+        return x, z, y
+*/
 }
 

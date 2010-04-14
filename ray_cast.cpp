@@ -49,7 +49,7 @@ void raycast_from_camera_to_surface( surface* test, bool* dest_hit = NULL, vecto
     if (dest_location != NULL)
         *dest_location = nearest_result;
     if (dest_local_location != NULL && nearest_valid) {
-        matrix<double> localize_basis = matrix_recast<int, double>(&(nearest_surface->localize_basis));
+        matrix<double> localize_basis = matrix_recast<int, double>( nearest_surface->localize_basis );
         vector<int>local_location = vector_recast<double, int>( (localize_basis * nearest_result) + vector<double>(0.5, 0.0, 0.5) );
         local_location.z = nearest_surface->local_position.z;
         *dest_local_location = local_location;
@@ -103,7 +103,7 @@ void raycast_from_camera( bool* dest_hit = NULL, vector<double>* dest_location =
     if (dest_location != NULL)
         *dest_location = nearest_result;
     if (dest_local_location != NULL && nearest_valid) {
-        matrix<double> localize_basis = matrix_recast<int, double>(&(nearest_surface->localize_basis));
+        matrix<double> localize_basis = matrix_recast<int, double>( nearest_surface->localize_basis );
         vector<double> global_float_location = localize_basis * nearest_result;
         if (global_float_location.x > 0) global_float_location.x += 0.5;
         else global_float_location.x -= 0.5;
