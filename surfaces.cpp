@@ -120,6 +120,7 @@ matrix<Numeric>& matrix<Numeric>::operator ~ () {
     tmp = row2.y;
     row2.y = row1.z;
     row1.z = tmp;
+    return *this;
 }
 
 template <typename Numeric>
@@ -127,6 +128,7 @@ ostream& operator << (ostream& o, matrix<Numeric> m) {
     o << "{ " << m.row0 << endl;
     o << "  " << m.row1 << endl;
     o << "  " << m.row2 << " }" << endl;
+    return o;
 }
 
   // Surface functions
@@ -135,6 +137,7 @@ ostream& operator << (ostream& o, surface& s) {
     o << "Position: " << s.position << endl;
     o << "Local position: " << s.local_position << endl;
     o << "Width: " << s.width << " Height: " << s.height << endl;
+    return o;
 }
 
 template <typename Numeric>
@@ -145,6 +148,7 @@ ostream& dump_to_file( ostream& o, vector<Numeric>& s ) {
 
 ostream& dump_to_file( ostream& o, int x ) {
     o << x << ";";
+    return o;
 }
 
 ostream& dump_to_file( ostream& o, surface& s ) {
@@ -171,7 +175,7 @@ list<surface> load_from_file( ifstream& input ) {
     surface scratch;
     int total = 0;
 
-    while (! input.eof() ) {
+    while ((! input.eof()) && input.good()) {
         input >> scratch.localize_basis.row0.x; input.ignore(1);
         input >> scratch.localize_basis.row0.y; input.ignore(1);
         input >> scratch.localize_basis.row0.z; input.ignore(1);

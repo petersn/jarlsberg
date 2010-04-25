@@ -15,6 +15,12 @@ test: test.cpp
 jarlsberg: main.cpp
 	g++ $(CFLAGS) -o Jarlsberg main.cpp
 
+jarlsberg_vise: main.cpp
+	g++ $(CFLAGS) -DHARD_CODE -o jarlsberg main.cpp
+
 %.o: %.cpp
 	g++ $(CFLAGS) -c $< -o $@
+
+clean:
+	rm Jarlsberg Test
 

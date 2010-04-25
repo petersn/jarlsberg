@@ -4,13 +4,33 @@ using namespace std;
 #include <fstream>
 #include <list>
 
+#ifndef WINDOWS_BUILD
+
 #include <SDL/SDL.h>
-#include <SDL/SDL_ttf.h>
 #include <GL/glut.h>
 #include <GL/gl.h>
 #include <GL/glu.h>
 
+#else
+
+#include <SDL.h>
+#include <GL\glut.h>
+#include <GL\gl.h>
+#include <GL\glu.h>
+
+#endif
+
 #include <cmath>
+
+  // Windows compatibility definitions
+#ifndef M_PI
+#define M_PI 3.1415926535897931
+#endif
+
+#ifndef INFINITY
+#include <limits>
+#define INFINITY (numeric_limits<double>::infinity())
+#endif
 
 #include "surfaces.h"
 #include "surfaces.cpp"
@@ -26,7 +46,7 @@ const double CONST_player_head       = 0.6;
 const double CONST_gravity           = 0.02;
   //  The terminal velocity is chosen such that if you're falling,
   //  you see no obvious repeating patterns on adjacent walls.
-  //  Any number that is
+  //  Any number whose LCM with 1 is great will do. (Real LCM, not integer LCM.)
 const double CONST_terminal_velocity = 7.63;
 const double CONST_jump_force        = 0.8;
 
@@ -241,6 +261,11 @@ int LoadTexture(const char *path) {
       // Load the bitmap
     bmpFile = SDL_LoadBMP(path);
 
+    if (bmpFile == NULL) {
+        cerr << "Failed to load texture: " << path << endl;
+        return -1;
+    }
+
       // Standard OpenGL texture creation code
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
@@ -253,14 +278,14 @@ int LoadTexture(const char *path) {
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
 
     gluBuild2DMipmaps(GL_TEXTURE_2D,3,bmpFile->w, \
         bmpFile->h,GL_BGR_EXT, \
         GL_UNSIGNED_BYTE,bmpFile->pixels);
 
-      //Free surface after using it
+      // Free the surface after using it
     SDL_FreeSurface(bmpFile);
 
     return texture;
@@ -305,8 +330,8 @@ void InitGL() {
 
     glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 
-GLfloat lmodel_ambient[] = { 0.2, 0.2, 0.2, 1.0 };
-glLightModelfv(GL_LIGHT_MODEL_AMBIENT, lmodel_ambient);
+    GLfloat lmodel_ambient[] = { 0.2, 0.2, 0.2, 1.0 };
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, lmodel_ambient);
 
     glColorMaterial ( GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE ) ;
     glEnable ( GL_COLOR_MATERIAL ) ;
@@ -324,54 +349,34 @@ glLightModelfv(GL_LIGHT_MODEL_AMBIENT, lmodel_ambient);
 }
 
 void extrude_game_geometry( int zunits ) {
-                        if (selection_state == SELECTION_DONE) {
-                            surface_local( selection_plane, selection_plane,
-                                           selection_start.x, selection_start.y,
-                                           selection_end.x-selection_start.x,
-                                           selection_end.y-selection_start.y );
+    if (selection_state == SELECTION_DONE) {
+        surface_local( selection_plane, selection_plane,
+                       selection_start.x, selection_start.y,
+                       selection_end.x-selection_start.x,
+                       selection_end.y-selection_start.y );
 
-                              // Clear out the temporary list
-                            geometry_temp.clear();
+          // Clear out the temporary list
+        geometry_temp.clear();
 
-                            list<surface> new_list;
+        list<surface> new_list;
 
-                              // Iterate through each surface, and add its associated extruded representation
-                            for (iter_surf=geometry.begin(); iter_surf != geometry.end(); ++iter_surf) {
-                                new_list = extrude( *iter_surf, selection_plane, zunits );
-                                geometry_temp.insert( geometry_temp.end(), new_list.begin(), new_list.end() );
-                            }
+          // Iterate through each surface, and add its associated extruded representation
+        for (iter_surf=geometry.begin(); iter_surf != geometry.end(); ++iter_surf) {
+            new_list = extrude( *iter_surf, selection_plane, zunits );
+            geometry_temp.insert( geometry_temp.end(), new_list.begin(), new_list.end() );
+        }
 
-                            geometry_temp = prune( geometry_temp );
-                            geometry      = optimize( geometry_temp );
+        geometry_temp = prune( geometry_temp );
+        geometry      = optimize( geometry_temp );
 
-                            selection_start = selection_start + vector<int>(0,0,zunits);
-                            selection_end = selection_end + vector<int>(0,0,zunits);
-                            selection_plane.local_position.z += zunits;
-                            selection_plane.position = selection_plane.globalize_basis * selection_plane.local_position;
-                            cout << "Total surfaces: " << geometry.size() << endl;
+        selection_start = selection_start + vector<int>(0,0,zunits);
+        selection_end = selection_end + vector<int>(0,0,zunits);
+        selection_plane.local_position.z += zunits;
+        selection_plane.position = selection_plane.globalize_basis * selection_plane.local_position;
+        //cout << "Total surfaces: " << geometry.size() << endl;
 
-                        }
+    }
 }
-
-/*
-def move_player( move_vector ):
-    global camerax, cameray, cameraz
-
-    minimum = min( player_width, player_height, player_head )
-
-    while move_vector.norm() >= minimum:
-        unit_move = move_vector.unit() * minimum
-        move_vector -= unit_move
-        camerax += unit_move[0]
-        cameray += unit_move[1]
-        cameraz += unit_move[2]
-        camerax, cameray, cameraz = model.limit( camerax, cameray, cameraz, player_width, player_height, player_head )
-
-    camerax += move_vector[0]
-    cameray += move_vector[1]
-    cameraz += move_vector[2]
-    camerax, cameray, cameraz = model.limit( camerax, cameray, cameraz, player_width, player_height, player_head )
-*/
 
 void move_player( vector<double> dxyz ) {
     bool floored;
@@ -490,7 +495,15 @@ int main(int argc, char **argv) {
     InitGL();
 
       // Load the default surface texture
+#ifndef HARD_CODE
     glob_tex = LoadTexture("Data/Old.bmp");
+#else
+    char* home_dir = getenv("HOME");
+    char* str_block = (char *) malloc(1024); // Big, for reaaaally long usernames
+    sprintf(str_block, "%s/.jarlsberg/Data/Old.bmp", home_dir);
+    glob_tex = LoadTexture(str_block);
+    free(str_block);
+#endif
 
     game_continue = true;
 
@@ -533,6 +546,9 @@ int main(int argc, char **argv) {
                     }
                     else if (event.key.keysym.sym == 'c') {
                         physics_mode = PHYSICS_CONSTRAINED;
+                    }
+                    else if (event.key.keysym.sym == 'r') {
+                        
                     }
 
                     break;
@@ -598,15 +614,15 @@ int main(int argc, char **argv) {
 
           // ========== Test for extrusion ========== //
 
-                      // Test for specific keys
-                    if (keys_held[SDLK_PAGEUP] ^ keys_held[SDLK_PAGEDOWN]) {
-                        if (keys_held[SDLK_PAGEUP]) {
-                            extrude_game_geometry(1);
-                        }
-                        if (keys_held[SDLK_PAGEDOWN]) {
-                            extrude_game_geometry(-1);
-                        }
-                    }
+          // Test for specific keys
+        if (keys_held[SDLK_PAGEUP] ^ keys_held[SDLK_PAGEDOWN]) {
+            if (keys_held[SDLK_PAGEUP]) {
+                extrude_game_geometry(1);
+            }
+            if (keys_held[SDLK_PAGEDOWN]) {
+                extrude_game_geometry(-1);
+            }
+        }
 
           // ========== Done ========== //
 
