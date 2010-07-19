@@ -2,6 +2,8 @@
 using namespace std;
 #include <iostream>
 #include <fstream>
+#include <sstream>
+#include <string>
 #include <list>
 
 #ifndef WINDOWS_BUILD
@@ -34,13 +36,6 @@ using namespace std;
 
 #include "main.h"
 
-#include "surfaces.h"
-#include "surfaces.cpp"
-#include "textures.h"
-
-#define BPP 4
-#define DEPTH 32
-
   // Game constants
 const double CONST_movespeed			= 0.3;
 const double CONST_player_width		 = 1.1;
@@ -51,7 +46,7 @@ const double CONST_gravity			  = 0.02;
   //  you see no obvious repeating patterns on adjacent walls.
   //  Any number whose LCM with 1 is great will do. (Rational LCM, not integer LCM.)
 const double CONST_terminal_velocity	= 17.63;
-const double CONST_jump_force		   = 1.3;
+const double CONST_jump_force		   = 1.0; // 1.3
   //  Lower values for goeyness result in sludgier collision detection.
   //  Higher values make the world more rubbery. (Values >1 are a baaaaaad idea.)
 const double CONST_physics_goeyness	 = 0.1;
@@ -59,11 +54,20 @@ const double CONST_physics_goeyness	 = 0.1;
   //  Therefore, a low goo exponent prevents small objects from acting as ridiculous "player canon".
 const double CONST_physics_goo_exponent = 0.5;
 const double CONST_physics_mu_air	   = 0.99;
-const double CONST_physics_mu_floor	 = 0.5;
+const double CONST_physics_mu_floor	 = 0.99;
+const int CONST_jump_grace_period = 20; // Namely, 2/5ths of a second.
 
 const double CONST_move_increment	   = 0.5;
 
+#include "surfaces.h"
+#include "surfaces.cpp"
+#include "textures.h"
+
+#define BPP 4
+#define DEPTH 32
+
   // Global variables that are essentially static configuration
+int argc;
 int config_WIDTH;
 int config_HEIGHT;
 SDL_Surface *screen;
@@ -84,18 +88,15 @@ list<surface>::iterator iter_surf;
 char keys_held[1024] = {0};
 int mouse_x, mouse_y;
 
+string map_collection_prefix;
+
 enum physics_mode_t {
 	PHYSICS_FLY,
 	PHYSICS_CONSTRAINED,
 	PHYSICS_WALK,
 };
 
-enum game_mode_t {
-	GAME_EDITING,
-	GAME_PLAYING,
-};
-
-game_mode_t game_mode = GAME_EDITING;
+game_mode_t game_mode = GAME_PLAYING;
 physics_mode_t physics_mode = PHYSICS_WALK;
 
 enum selection_state_t {
@@ -124,25 +125,15 @@ GLfloat LightPosition[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 GLfloat default_emission[] = {0.0, 0.0, 0.0, 1.0};
 
-  // Global variables
-struct camera_t {
-	GLfloat x, y, z;
-	vector<double> momentum;
-	GLfloat facing, tilt;
-	bool floored;
-
-	  // New angles are mixed with old angles to smooth out low FPS mice
-	GLfloat facing_target, tilt_target;
-
-	  // Set to 0.0 for the camera to be as sluggish as possible, and 1.0 for it to be as snappy as possible
-#define CAMERA_SMOOTHING_FACTOR 0.5
-
-};
-
   // Default camera
 camera_t camera = {0};
 
+  // Start location of the level
 camera_t start_location = {0};
+
+double hit_points;
+double victory_total;
+int current_level = 0;
 
   // Include a small bit of code that does ray casting
 #include "ray_cast.cpp"
@@ -155,17 +146,50 @@ void DrawScreen() {
 
 	//SDL_FillRect( SDL_GetVideoSurface(), NULL, SDL_MapRGB(SDL_GetVideoSurface()->format,100,32,64) );
 
-	  // Clear the screen and the depth buffer
+	// Clear the screen and the depth buffer
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	  // Reset the view
+	// Reset the view
 	glLoadIdentity();
 
-	  // Set light position
+	// Set light position
 	glLightfv(GL_LIGHT0, GL_POSITION, LightPosition);
 
-	  // Reposition the camera based on its position
+	// Draw a health bar
+	if (game_mode == GAME_PLAYING) {
+		glDisable(GL_LIGHTING);
+		glDisable(GL_TEXTURE_2D);
+		// Health bar
+		glColor3f(1.0f,victory_total,0.0f);
+		glBegin(GL_QUADS);
+		glVertex3f(-0.05f, 0.055f, -0.1);
+		glVertex3f(-0.05f+hit_points*0.001f, 0.055f, -0.1);
+		glVertex3f(-0.05f+hit_points*0.001f, 0.1f, -0.1);
+		glVertex3f(-0.05f, 0.1f, -0.1);
+		glEnd();
+		// Grey bar
+		glColor3f(0.5f,0.5f,0.5f);
+		glBegin(GL_QUADS);
+		glVertex3f(-0.05f, 0.0551f, -0.1001);
+		glVertex3f( 0.05f, 0.0551f, -0.1001);
+		glVertex3f( 0.05f, 0.1f, -0.1001);
+		glVertex3f(-0.05f, 0.1f, -0.1001);
+		glEnd();
+		// Black background
+		glColor3f(0.0f,0.0f,0.0f);
+		glBegin(GL_QUADS);
+		glVertex3f(-0.051f, 0.054f, -0.1002);
+		glVertex3f( 0.051f, 0.054f, -0.1002);
+		glVertex3f( 0.051f, 0.1f, -0.1002);
+		glVertex3f(-0.051f, 0.1f, -0.1002);
+		glEnd();
+		glEnable(GL_TEXTURE_2D);
+		glEnable(GL_LIGHTING);
+	}
+
+	// Reposition the camera based on its position
 	glRotatef( camera.tilt,   1.0f, 0.0f, 0.0f);
 	glRotatef( camera.facing, 0.0f, 1.0f, 0.0f);
+
 	glTranslatef( -camera.x, -camera.y, -camera.z );
 
 #ifndef COLORFUL_MODE
@@ -189,7 +213,7 @@ void DrawScreen() {
 	bool hit;
 	vector<double> hit_point;
 
-	  // Magically load up values into the variables
+	// Magically load up values into the variables
 	raycast_from_camera( &hit, &hit_point );
 
 	//hit_point = vector_recast<int, double>( vector_recast<double, int> ( hit_point - vector<double>(0.5,0.5,0.5) ) );
@@ -263,6 +287,8 @@ void DrawScreen() {
 		}
 	}
 
+	// Crucial call!
+	// If this is omitted, then the program will cause your whole system to thrash, as the graphics buffers will overflow.
 	SDL_GL_SwapBuffers();
 
 //	SDL_BlitSurface(text, &src, screen, &dest);
@@ -381,7 +407,7 @@ void InitGL() {
 	glLoadIdentity();
 
 	  // Calculate The Aspect Ratio Of The Window
-	gluPerspective(60.0f, (GLfloat) config_WIDTH / (GLfloat) config_HEIGHT, 0.1f, 4000.0f);
+	gluPerspective(60.0f, (GLfloat) config_WIDTH / (GLfloat) config_HEIGHT, 0.05f, 4000.0f);
 
 	glMatrixMode(GL_MODELVIEW);
 
@@ -422,8 +448,12 @@ void extrude_game_geometry( int zunits, bool do_optimize ) {
 
 		  // Iterate through each surface, and add its associated extruded representation
 		for (iter_surf=geometry.begin(); iter_surf != geometry.end(); ++iter_surf) {
-			new_list = extrude( *iter_surf, selection_plane, zunits );
-			geometry_temp.insert( geometry_temp.end(), new_list.begin(), new_list.end() );
+			if (game_mode != GAME_PLAYING || global_texture_table[(*iter_surf).surface_texture_index].extrudable) {
+				new_list = extrude( *iter_surf, selection_plane, zunits );
+				geometry_temp.insert( geometry_temp.end(), new_list.begin(), new_list.end() );
+			} else {
+				geometry_temp.push_back( *iter_surf );
+			}
 		}
 
 		geometry_temp = prune( geometry_temp );
@@ -478,7 +508,37 @@ void move_player( vector<double> dxyz ) {
 	}
 }
 
+void restart_level(void) {
+	if (argc >= 2) {
+		reload_level_geometry();
+	}
+	physics_mode = PHYSICS_WALK;
+	camera = start_location;
+	current_texture_on_brush = 0;
+	hit_points = 100.0;
+	victory_total = 0.0;
+}
+
+void reload_level_geometry(void) {
+	ifstream myfile;
+	stringstream map_path;
+	map_path << map_collection_prefix << current_level;
+	cout << "Reading level: " << map_path.str() << endl;
+
+	myfile.open(map_path.str(), ios::in|ios::binary);
+	myfile >> start_location;
+	geometry = load_from_file( myfile );
+	myfile.close();
+}
+
+void load_next_level(void) {
+	current_level++;
+	reload_level_geometry();
+	restart_level();
+}
+
 int main(int argc, char **argv) {
+	::argc = argc;
 
 	const SDL_VideoInfo *info;
 	bool game_continue;
@@ -487,6 +547,12 @@ int main(int argc, char **argv) {
 	SDL_Event event;
 	  // Flags to pass to SDL_SetVideoMode
 	int videoFlags;
+
+	if (argc < 2) {
+		map_collection_prefix = "./";
+	} else {
+		map_collection_prefix = string( argv[1] );
+	}
 
 #ifndef INVERT_CUBE
 	geometry.push_back( surface(vector<int>(20,-5,-20), 40, 40, vector<int>(-1,0,0), vector<int>(0,0,1)) );
@@ -530,7 +596,7 @@ int main(int argc, char **argv) {
 	videoFlags |= SDL_RESIZABLE;	   /* Enable window resizing */
 	videoFlags |= SDL_FULLSCREEN;
 
-	  // Old flags: SDL_FULLSCREEN | SDL_HWSURFACE | SDL_OPENGL
+	// Old flags: SDL_FULLSCREEN | SDL_HWSURFACE | SDL_OPENGL
 
 	/* This checks to see if surfaces can be stored in memory */
 	if ( info->hw_available )
@@ -552,25 +618,35 @@ int main(int argc, char **argv) {
 		cerr << "SDL_SetVideoMode failed: " << SDL_GetError() << endl;
 	}
 
-	  // Hide the cursor
+	// Hide the cursor
 	SDL_ShowCursor(SDL_DISABLE);
 
-	  // Initialize OpenGL
+	// Initialize OpenGL
 	InitGL();
 
-	  // Load the default surface texture
+	// Load the default surface texture
 	global_texture_table = new texture_entry_t[global_texture_index];
 	GLfloat lava_emission[] = {0.8, 0.8, 0.8, 1.0};
 #ifndef HARD_CODE
 	skybox_texture = LoadTexture("Data/Skybox.bmp", false);
 	LoadTexture("Data/Old.bmp");
 	global_texture_table[global_texture_index-1].set_emission( default_emission );
+	LoadTexture("Data/Metal.bmp");
+	global_texture_table[global_texture_index-1].set_emission( default_emission );
+	global_texture_table[global_texture_index-1].extrudable = false;
 	LoadTexture("Data/Lava.bmp");
 	global_texture_table[global_texture_index-1].set_emission( lava_emission );
 	global_texture_table[global_texture_index-1].scale_factor = 0.1;
+	global_texture_table[global_texture_index-1].damage_per_frame = 5.0;
 	LoadTexture("Data/Grass.bmp");
 	global_texture_table[global_texture_index-1].set_emission( default_emission );
 	global_texture_table[global_texture_index-1].scale_factor = 0.1;
+	global_texture_table[global_texture_index-1].extrudable = false;
+	LoadTexture("Data/Win.bmp");
+	global_texture_table[global_texture_index-1].set_emission( lava_emission );
+	global_texture_table[global_texture_index-1].scale_factor = 0.05;
+	global_texture_table[global_texture_index-1].victory_points = 0.01;
+	global_texture_table[global_texture_index-1].extrudable = false;
 #else
 	char* home_dir = getenv("HOME");
 	char* str_block = (char *) malloc(1024); // Big, for reaaaally long usernames
@@ -582,6 +658,12 @@ int main(int argc, char **argv) {
 #endif
 
 	game_continue = true;
+
+	if (argc >= 2) {
+		load_next_level();
+	}
+
+	restart_level();
 
 	while (game_continue) {
 		DrawScreen();
@@ -605,14 +687,19 @@ int main(int argc, char **argv) {
 					if (event.key.keysym.sym == SDLK_SPACE && game_mode == GAME_EDITING) {
 						ofstream myfile;
 						myfile.open("map.jb_geo");
+						dump_to_file( myfile, start_location );
 						dump_to_file( myfile, geometry );
 						myfile.close();
 					}
-					else if (event.key.keysym.sym == SDLK_BACKSPACE) {
+					else if (event.key.keysym.sym == SDLK_BACKSPACE && game_mode == GAME_EDITING) {
 						ifstream myfile;
 						myfile.open("map.jb_geo", ios::in|ios::binary);
+						myfile >> start_location;
 						geometry = load_from_file( myfile );
 						myfile.close();
+					}
+					else if (event.key.keysym.sym == 'k' && game_mode == GAME_PLAYING) {
+						restart_level();
 					}
 					else if (event.key.keysym.sym == 'e' && game_mode == GAME_EDITING) {
 						physics_mode = PHYSICS_FLY;
@@ -679,10 +766,8 @@ int main(int argc, char **argv) {
 					}
 					else if (event.key.keysym.sym == 'q') {
 						if (game_mode == GAME_EDITING) {
-							physics_mode = PHYSICS_WALK;
-							camera = start_location;
-							current_texture_on_brush = 0;
 							game_mode = GAME_PLAYING;
+							restart_level();
 						}
 						else if (game_mode == GAME_PLAYING) {
 							game_mode = GAME_EDITING;
@@ -717,8 +802,9 @@ int main(int argc, char **argv) {
 						}
 					}
 					if (event.button.button == SDL_BUTTON_RIGHT) {
-						if (physics_mode == PHYSICS_WALK) {
+						if (physics_mode == PHYSICS_WALK && (camera.floored || game_mode != GAME_PLAYING)) {
 							camera.momentum.y += CONST_jump_force;
+							camera.floored = 0;
 						}
 					}
 					if (event.button.button == SDL_BUTTON_WHEELUP) {
@@ -783,7 +869,7 @@ int main(int argc, char **argv) {
 				camera.momentum.y = -CONST_terminal_velocity;
 
 			// Slow down the player, then move them based on their momentum
-			if (camera.floored) {
+			if (camera.floored == CONST_jump_grace_period) {
 				camera.momentum = camera.momentum * CONST_physics_mu_floor;
 			}
 			else {
@@ -792,7 +878,27 @@ int main(int argc, char **argv) {
 			move_player( camera.momentum );
 		}
 
-		  // Update game state
+		// Check various game states, such as enemies, etc.
+		if (game_mode == GAME_PLAYING) {
+
+			// Decrement the floored value
+			if (camera.floored > 0) {
+				camera.floored--;
+			}
+
+			if (hit_points <= 0.0) {
+				// TODO: Insert some sort of indicator that you have died
+				restart_level();
+			}
+
+			if (victory_total >= 1.0) {
+				// TODO: Insert some sort of indicator that you have beaten the level
+				load_next_level();
+			}
+
+		}
+
+		// Update game state
 		if (keys_held[SDLK_UP]) {
 			if (physics_mode == PHYSICS_FLY || physics_mode == PHYSICS_CONSTRAINED) {
 				GLint viewport[4];

@@ -152,6 +152,27 @@ ostream& dump_to_file( ostream& o, int x ) {
 	return o;
 }
 
+ostream& dump_to_file( ostream& o, double x ) {
+	o << x << ";";
+	return o;
+}
+
+ifstream& operator >> ( ifstream& i, camera_t& c ) {
+	i >> c.x; i.ignore(1);
+	i >> c.y; i.ignore(1);
+	i >> c.z; i.ignore(1);
+	i >> c.momentum.x; i.ignore(1);
+	i >> c.momentum.y; i.ignore(1);
+	i >> c.momentum.z; i.ignore(1);
+	i >> c.facing; i.ignore(1);
+	i >> c.tilt; i.ignore(1);
+	i >> c.floored; i.ignore(1);
+	i >> c.facing_target; i.ignore(1);
+	i >> c.tilt_target; i.ignore(1);
+	i.ignore(1);
+	return i;
+}
+
 ostream& dump_to_file( ostream& o, surface& s ) {
 	  // Store only minimal information, and reconstruct the rest
 	dump_to_file( o, s.localize_basis.row0 );
@@ -160,6 +181,22 @@ ostream& dump_to_file( ostream& o, surface& s ) {
 	dump_to_file( o, s.width );
 	dump_to_file( o, s.height );
 	dump_to_file( o, s.surface_texture_index );
+	o << endl;
+	return o;
+}
+
+ostream& dump_to_file( ostream& o, camera_t& c ) {
+	dump_to_file( o, c.x );
+	dump_to_file( o, c.y );
+	dump_to_file( o, c.z );
+	dump_to_file( o, c.momentum.x );
+	dump_to_file( o, c.momentum.y );
+	dump_to_file( o, c.momentum.z );
+	dump_to_file( o, c.facing );
+	dump_to_file( o, c.tilt );
+	dump_to_file( o, c.floored );
+	dump_to_file( o, c.facing_target );
+	dump_to_file( o, c.tilt_target );
 	o << endl;
 	return o;
 }
@@ -622,24 +659,29 @@ list<surface> prune( list<surface> source ) {
 				if (iter_surf == iter_surf2) continue;
 				if ((*iter_surf).width == 0 || (*iter_surf2).width == 0) continue;
 				if ((*iter_surf).localize_basis.row2 == -((*iter_surf2).localize_basis.row2)) {
-					//cout << "############################################" << endl << *iter_surf;
 					temp = *iter_surf2;
 					flip_surface( temp );
-					//cout << *iter_surf2;
-					//cout << temp;
-					//cout << "############################################" << endl;
 					if (overlaps( *iter_surf, temp )) {
 						temp_list = subtract( *iter_surf, temp );
-						//cout << "!!!!!!!!!!!!!!!!!!!!!!! Length: " << temp_list.size() << endl;
 						source.insert( source.end(), temp_list.begin(), temp_list.end() );
 						temp_list = subtract( temp, *iter_surf );
-						//cout << "%%%%%%%%%%%%%%%%%%%%%%% Length: " << temp_list.size() << endl;
 						for (iter_surf3=temp_list.begin(); iter_surf3 != temp_list.end(); ++iter_surf3) {
 							flip_surface( *iter_surf3 );
 						}
 						source.insert( source.end(), temp_list.begin(), temp_list.end() );
 						(*iter_surf).width = 0;
 						(*iter_surf2).width = 0;
+						flag = true;
+						break;
+					}
+				}
+				else if ((*iter_surf).localize_basis.row2 == ((*iter_surf2).localize_basis.row2)) {
+					temp = *iter_surf2;
+					if (overlaps( *iter_surf, temp )) {
+						temp_list = subtract( *iter_surf, temp );
+						source.insert( source.end(), temp_list.begin(), temp_list.end() );
+						(*iter_surf).width = 0;
+						//(*iter_surf2).width = 0;
 						flag = true;
 						break;
 					}
@@ -740,19 +782,19 @@ list<surface> optimize( list<surface> source ) {
 	return dest;
 }
 
-vector<double> limit( list<surface> source, vector<double> p, vector<double>& momentum, double width, double base, double head, bool* floored=NULL ) {
+vector<double> limit( list<surface> source, vector<double> p, vector<double>& momentum, double width, double base, double head, int* floored=NULL ) {
 	list<surface>::iterator iter_surf;
 
-	  // Initially, you haven't touched the ground yet
-	if (floored != NULL)
-		*floored = false;
+	// Initially, you haven't touched the ground yet
+//	if (floored != NULL)
+//		*floored = 0;
 
 	for (iter_surf=source.begin(); iter_surf != source.end(); ++iter_surf) {
 		surface& s = *iter_surf;
 		matrix<double>localize_basis = matrix_recast<int, double>( s.localize_basis );
 		vector<double>loc_p = localize_basis * p;
 		loc_p.z -= s.local_position.z;
-		  // Test if the surface contains the locally projected point
+		// Test if the surface contains the locally projected point
 		if (loc_p.x > s.local_position.x && loc_p.x < s.local_position.x+s.width &&
 			loc_p.y > s.local_position.y && loc_p.y < s.local_position.y+s.height) {
 			double offset = 0.0;
@@ -770,9 +812,16 @@ vector<double> limit( list<surface> source, vector<double> p, vector<double>& mo
 				p = (globalize_basis * vector<double>(loc_p.x, loc_p.y, s.local_position.z+offset));
 #endif
 
-				  // If you're standing on the ground, tell the caller, if they asked
+				// Test if damage should be dealt by the surface in question
+				if (game_mode == GAME_PLAYING) {
+					hit_points -= global_texture_table[s.surface_texture_index].damage_per_frame;
+					victory_total += global_texture_table[s.surface_texture_index].victory_points;
+				}
+
+				// If you're standing on the ground, tell the caller, if they asked
 				if (s.localize_basis.row2.y > 0 && floored != NULL) {
-					*floored = true;
+					*floored = CONST_jump_grace_period;
+					momentum = vector<double>(0.0, 0.0, 0.0);
 				}
 				if (loc_p.z > 0 && loc_p.z < 0.1) {
 					p = globalize_basis * vector<double>(loc_p.x, loc_p.y, s.local_position.z+offset);
