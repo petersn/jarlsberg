@@ -1,6 +1,6 @@
 
 CFLAGS= -O2 -ffast-math -Wall -std=c++0x
-CFLAGS+= -lm -lglut `sdl-config --cflags --libs`
+CFLAGS+= -lm -lGLU -lglut `sdl-config --cflags --libs`
 
   # Special Jarlsberg Options
 #CFLAGS+= -DDEBUG_MODE
