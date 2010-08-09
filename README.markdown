@@ -18,10 +18,10 @@ From a fresh vanilla Ubuntu install (last tested on 10.04, x86_64) the only pack
 Compilation on Windows
 ----------------------
 
-A project file for Visual C++ 2010 Distress is included.
+A project file for Visual C++ 2010 Distress will be included.
 
 Before you compile, make sure you have the glut and SDL headers, dlls, and object files.
-You can get these at: 
+You can get these at: ...
 
 Generic Windows compilation
 ---------------------------
