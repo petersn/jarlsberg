@@ -4,7 +4,7 @@ Compilation on UNIX
 
 The makefile works, but the minimum required is basically something like:
 
-	g++ -lglut -lSDL main.cpp
+	g++ -lglut -lGLU -lSDL -std=c++0x main.cpp
 
 But you may as well add in options like -O2, and -ffast-math.
 
